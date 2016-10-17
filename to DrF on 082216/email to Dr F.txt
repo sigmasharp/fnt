@@ -1,0 +1,25 @@
+Dear Dr. Fygenson:
+
+Good morning.
+
+Attached please find 4 more pairs of result and summary from the new algorithm:
+
+1. Russell2K.value: 60-month: monthly (Rerun to fix a format issue);
+    data60BR.*.M.result.csv and 
+    data60BR.*.M.summary.csv
+
+2. Russell2K.value. 60-month: quarterly
+    data60BR.*.Q.result.csv and 
+    data60BR.*.Q.summary.csv
+
+3. Bloomgerg 62 month: monthly
+    data62B.*.M.result.csv and 
+    data62B.*.M.summary.csv
+
+4. Bloomgerg 62 month: quarterly
+    data62B.*.Q.result.csv and 
+    data62B.*.Q.summary.csv
+
+Thanks,
+
+Alan
