@@ -7,7 +7,7 @@ ini_set("memory_limit", '1024M');
 //define the DEFAULT of the datafolder, just the default
 //the input instead can be selected by the user on the fly
 
-define('DATAFOLDER', 'data62B');
+define('DATAFOLDER', 'data62Btest');
 
 define('IDIR', 'input/');  // The input folder which should be just ./input
 define('ODIR', 'output/'); // The output folder which should be jsut ./output for all results with timestamps
@@ -162,7 +162,17 @@ function intersection($s1, $s2){ // si intersects with s2, in both s1 and s2.
 	return(array_intersect($s1, $s2));
 }
 
-function rtn($m){ // return for the month $m, TBD 
+function rtn($m){
+	global $mkt, $rtn;
+	
+	$ret = 0.0;
+	$prtsz = psz($m, $s1);
+	foreach($s1 as $s){
+		$sz = $size_set[$m][$s];
+		$rt = $retn_set[$m][$s];
+		$ret += $rt*$sz/$prtsz;
+	}
+	return($ret);	
 }
 
 function cst($sz){ // to decide on the level of costs of buying new stocks depending on the base
@@ -209,8 +219,6 @@ $TB = 0.0016; //T-Bill Average
 //get the output file ready
 $SUMA = array('Date (MM/YY)', 'MKTCAP ($B)', 'Max MKTCAP ($M)', 'Min MKTCAP ($M)', 'Return', 'No. of Secs', 'Turnover', 'Est Txn cost (%AUM)');
 
-//$ODIR = sprintf("%s-out/%s-%02d-%02d/", substr(IDIR,0, -1), (BM==5)?"BM":((BM==12)?"EP":((BM==13)?"SP":((BM==14)?"OCTP":((BM==15)?"EBIDA":((BM==16)?"LCR1":((BM==17)?"LCR2":"UKN")))))), SP * 100.0, VP * 100.0);
-
 if(!is_dir(ODIR . DATAFOLDER))
 	mkdir(ODIR . DATAFOLDER);
 
@@ -221,119 +229,73 @@ $fprf = fopen(ODIR . DATAFOLDER . '/' . $SF, 'w') or die ("Can't open file: " . 
 
 //Now we will start the loop of reading in the input filesize
 
-//echo sizeof($file_list) . '<br>';
-var_dump($file_list);
-for($i = 0; $i < SEQ; $i+=GAP){
-/*
-		$mn = sprintf("%02d%02d", $m, substr($y,2));
-		
-		$size_set[$mi] = array(); //initialize for the new time period
-		$valu_set[$mi] = array();
-		$retn_set[$mi] = array();
-		$util_set[$mi] = array();
-		
-		$IU[$mi] = array(); //universe
-		$US[$mi] = array();
-		$NU[$mi] = array();
-		$TT[$mi] = 0.0;
-		$XS[$mi] = -10000000.0;
-		$NS[$mi] = 10000000.0;
-		$XV[$mi] = -10000000.0;
-		$NV[$mi] = 10000000.0;
-		
-		$fn = IDIR . $mn . CSV;
-		
-		$fp = fopen($fn, 'r') or die('Cannot open file "' . $fn . '"...<br>');
-		
-		$csv_line = fgetcsv($fp); //skip title
-		
-		if($csv_line[STS] == "status_code")
-			$thirdParty = true;
+//var_dump($file_list);
 
-		while($csv_line = fgetcsv($fp)){
-			$t = $csv_line[TKR]; //echo ($t . "<br>"); the ticker
+$tck = array(); //[$pi][$row]investable universe for this time unit, treated as a 'constant' per time unit
+$mkt = array(); //[$pi][$row]market cap
+$rtn = array(); //[$pi][$row]return
+$max = array(); //[$pi] max cap
+$min = array(); //[$pi] min cap
+$nor = array(); //[$pi] number of rows;
+$trn = array(); //[$pi] turnover
+$tst = array(); //[$pi] transaction cost
 
-			if($csv_line[TMC]=='' || $csv_line[TMC] == 0.0) // skip tkr's that dont have a Market Cap
-				continue;
-			
-			if($t == '') continue;//simply skip it
-						
-			if(isset($IU[$mi][$t])){
-				echo 'Duplicated ticker!!! ' . $t . '<br>';
-				break;
-			}
-			
-			$IU[$mi][] = $t;
-			
-			if($thirdParty){
-				$utility = false;
-				switch($csv_line[STS]){
-					case "ERN":	case "IPO": case "AIB": case "LP": case "LLC": case "NO": case "M": 
-					case "3M": case "RP": case "AEB": case "REIT": case "Ltd Part": case "Private Comp":
-					case "MLP": case "Tracking Stk": case "ADR":
-					  $utility = true;
-					  break;
-					default:
-						break;
-				}
-			}
-			else{
-				$utility = ($csv_line[STS] == 'Utilities');				
-			}
+$pi = 0;
+
+for($i = 0; $i < SEQ; $i+=GAP){ // per period (monthly or quarterly)
+	//var_dump($file_list[$i]);
+
+	$tck[$pi] = array();
+	$mkt[$pi] = array();
+	$rtn[$pi] = array();
+	$max[$pi] = 0;
+	$min[$pi] = 1000000000000.0;
+	$nor[$pi] = 0;
+	$trn[$pi] = 0;
+	$tst[$pi] = 0.0;
+	
+
+	$fn = sprintf("%02d%02d", substr($file_list[$i], 4, 2), substr($file_list[$i], 2, 2));
 		
+	$fn = IDIR . DATAFOLDER . '/' . $fn . CSV;
+	
+	$fp = fopen($fn, 'r') or die('Cannot open file "' . $fn . '"...<br>');
+	
+	$csv_line = fgetcsv($fp); //skip title
+	
+	while($csv_line = fgetcsv($fp)){
+		$t = $csv_line[TKR]; //echo ($t . "<br>"); the ticker
 
-			if(!$thirdParty && $csv_line[BM]=='')
-				$csv_line[BM] = -1000.0; // for covering the situation when no BM is there
-			if(!$thirdParty){
-				$csv_line[TMC] /= 1000000.0;
-			}
-
-			$size_set[$mi][$t] = $csv_line[TMC] * 1.0;
-			if(BM == 16){ //LCR1, linear combination of R1W....
-				$valu_set[$mi][$t] = $lp1 * $csv_line[R1W] + $lp2 * $csv_line[R1M] + $lp3 * $csv_line[R3M] + $lp4 * $csv_line[R6M] + $lp5 * $csv_line[R1Y];
-			}else if(BM == 17){
-				$valu_set[$mi][$t] = $lp1 * $csv_line[MA5] + $lp2 * $csv_line[MA10] + $lp3 * $csv_line[MA20] + $lp4 * $csv_line[MA50] + $lp5 * $csv_line[MA100] + $lp6 * $csv_line[MA200];				
-			}else
-				$valu_set[$mi][$t] = $csv_line[BM] * 1.0; // can change in the future
-			if($thirdParty){
-				$valu_set[$mi][$t] = $csv_line[BM]/$csv_line[TMC]; // can change in the future				
-			}
-			if($thirdParty)
-				$retn_set[$mi][$t] = $csv_line[RTN]/100.0;
-			else
-				$retn_set[$mi][$t] = $csv_line[RTN];
-			$util_set[$mi][$t] = $utility;
-			
-			if($utility)
-				$US[$mi][] = $t;
-			else
-				$NU[$mi][] = $t;
-			
-			$TT[$mi] += $size_set[$mi][$t];
-			
-			$sz = $size_set[$mi][$t];
-			$vl = $valu_set[$mi][$t];
-			
-			if($sz > $XS[$mi])
-				$XS[$mi] = $sz;
-			if($sz < $NS[$mi])
-				$NS[$mi] = $sz;
-			if($vl > $XV[$mi])
-				$XV[$mi] = $vl;
-			if($vl < $NV[$mi])
-				$NV[$mi] = $vl;			
-		}			
+		if($csv_line[MKT]=='' || $csv_line[MKT] == 0.0) // skip tkr's that dont have a Market Cap
+			continue;
 		
-		fclose($fp) or die('Cannot close file "' . $fn . '"...<br>');
-
-		$mi++;
-		if(($m == EM)&&($y==EY))break;
+		if($t == '') continue;//simply skip it
+					
+		if(isset($tck[$pi][$t])){
+			echo 'Duplicated ticker!!! ' . $t . '<br>';
+			break;
+		}
+		
+		$tck[$pi][] = $t;	
+        $mkt[$pi][] = $csv_line[MKT];
+		$rtn[$pi][] = $csv_line[(QTR==0?R1M:R3M)];
+		if($max[$pi] < $mkt[$pi][$nor[$pi]])
+			$max[$pi] = $mkt[$pi][$nor[$pi]];
+		if($min[$pi] > $mkt[$pi][$nor[$pi]])
+			$min[$pi] = $mkt[$pi][$nor[$pi]];		
+		$nor[$pi] ++;		
 	}
+	
+	fclose($fp) or die('Cannot close file "' . $fn . '"...<br>');
 
-	if(($m == EM)&&($y==EY))break;
-	if($m == 13) $m=1;
-*/	
+	$pi++;
 }
+
+//var_dump($tck);
+var_dump($mkt);
+//var_dump($rtn);
+var_dump($max);
+var_dump($min);
 
 
 

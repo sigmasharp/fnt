@@ -1,0 +1,618 @@
+Public Sub BKTST_3()
+
+'
+' Multiple Bktst
+'
+' Variables that must be updated MANUALLY for running on each distinct data set:
+'           pth - path name for data files
+'           tickcol, mccol, btmcol, dpbcol, eligcol, elgicol2, ffcol, rtncol - data col #s in csv data sets
+'           scl - scale factor for Mkt cap & book data (scale to $M)
+'           mcrng, btmrng - buy range breaks as cumulative % mkt cap
+'           hdr - number of header lines in raw data files
+'
+' Sections that must be adjusted MANUALLY for running on each distinct data set:
+'           set path
+'           data column assignments
+'           scl factor (1 if mkt cap is in millions, 1000000 if it is in dollars)
+'           btm and mcap range if adjusting buy ranges
+'           read data loop - number of header rows in raw data file
+'           read data loop - review comment instr if btm is read directly rather than book
+'           read data loop - comment out ff section if free float factor = 1
+
+
+Dim i As Integer, j As Integer, k As Long
+
+Dim mdl As Integer
+Dim tmp As String, eof As String, opfile As String
+Dim tmp2 As Double, cwt1 As Double, cwt2 As Double, subuniv As Double, ffuniv As Double
+Dim tmp3 As Integer, flgb As Integer, flgs As Integer
+Dim t_scl As Integer, tbill_use As Integer
+Dim use_ff As Integer, bk_or_btm As Integer, reitcol As Integer, reitflg As Integer, utilflg As Integer
+Dim brk1(480) As Integer, brk2(480) As Integer
+Dim cst_sch(6) As Double
+Dim btmbk As Double
+Dim dt1 As String, dt2 As String, ms As String, ys As String
+Dim pth As String, fname As String, simname As String
+Dim m1 As Integer, m2 As Integer, y1 As Integer, y2 As Integer, ndat As Integer, nper As Integer
+Dim mccol As Integer, btmcol As Integer, ffcol As Integer, dpbcol As Integer
+Dim rtncol As Integer, eligcol As Integer, tickcol As Integer, eligcol2 As Integer, cuscol As Integer
+Dim mcap(480, 4000) As Double, btm(480, 4000) As Double, ff(480, 4000) As Double
+Dim dpb(480, 4000) As Double, rtn(480, 4000) As Double
+Dim txn(480, 4000) As Double
+Dim elig(480, 4000) As Integer, util(480, 4000) As Integer
+Dim tckr(480, 4000) As String, cusip(480, 4000) As String
+Dim mcap2(4000) As Double, btm2(4000) As Double, ff2(4000) As Double
+Dim dpb2(4000) As Double, rtn2(4000) As Double
+Dim txn2(4000) As Double
+Dim elig2(4000) As Integer, util2(4000) As Integer
+Dim tckr2(4000) As String, cusip2(4000) As String
+Dim nrec(480) As Integer, nsec(480) As Integer
+Dim univ(480) As Double, prt(480) As Double
+Dim wtmcap(480) As Double, wtbtm(480) As Double, ret(480) As Double
+Dim mtcp(480) As Double, mtcpl(480) As Double, mbtm(480) As Double, mntcp(480) As Double
+Dim wt1(4000) As Double, wt2(4000) As Double, wt3(4000) As Double, srtdat(4000) As Double, ordr(4000) As Integer
+Dim dt(480) As String, to_sll(480) As Double, to_buy(480) As Double, tto(480) As Double, trns(480) As Double
+Dim hdr As Integer
+Dim scl As Double, mcrng As Double, mcrngl As Double, btmrng As Double, tbill As Double, rtn_scl As Double
+Dim hmcrng As Double, hbtmrng As Double     ' for hold ranges
+Dim inprt(480, 4000) As Integer             ' 1=in portfolio, 0=not in portfolio
+
+'
+' Use this section of code if the "Backtest Target" sheet is being used
+'
+
+tbill_use = 1
+
+'
+' This section sets input parameter defaults in case input worksheet is not being used
+'
+pth = "C:\Davids stuff\Fygenson\Research\Small Value\Backtest\Historical\"
+hdr = 4
+dt1 = "0106"
+dt2 = "0514"
+mdl = 1
+scl = 1000000
+rtn_scl = 100
+t_scl = 1
+cst_sch(1) = (0.0134 / 2) + 0.001
+cst_sch(2) = (0.0056 / 2) + 0.001
+cst_sch(3) = (0.0025 / 2) + 0.001
+cst_sch(4) = (0.0014 / 2) + 0.001
+cst_sch(5) = (0.0004 / 2) + 0.001
+cst_sch(6) = 0
+cuscol = 1
+tickcol = 1             ' This set is for VC sims on 8-7-14
+mccol = 3
+btmcol = 4              ' Default calc below is for stored book (not BTM)
+dpbcol = 5              ' Test column. Can be any variable
+eligcol = 22
+eligcol2 = 23           ' Utilities check (sector column)
+reitcol = 22
+ffcol = 11              ' No ff adjustment
+rtncol = 26
+bk_or_btm = Worksheets("Backtest Target").Cells(24, 9)
+utilflg = 0
+reitflg = 0
+use_ff = 0
+mcrng = 0.1
+mcrngl = 0
+hmcrng = mcrng
+btmrng = 0.25
+hbtmrng = btmrng
+'
+'
+'   This section reads input worksheet. Comment the section out to run the program directly
+'
+'
+pth = Worksheets("Backtest Target").Cells(1, 2)
+hdr = Worksheets("Backtest Target").Cells(2, 2)
+tmp = Trim(Str(Month(Worksheets("Backtest Target").Cells(14, 2))))
+If (Len(tmp) = 1) Then tmp = Trim("0" & tmp)
+dt1 = tmp & Trim(Right(Str(Year(Worksheets("Backtest Target").Cells(14, 2))), 2))
+tmp = Trim(Str(Month(Worksheets("Backtest Target").Cells(15, 2))))
+If (Len(tmp) = 1) Then tmp = Trim("0" & tmp)
+dt2 = tmp & Trim(Right(Str(Year(Worksheets("Backtest Target").Cells(15, 2))), 2))
+scl = Worksheets("Backtest Target").Cells(10, 2)
+rtn_scl = Worksheets("Backtest Target").Cells(11, 2)
+If Worksheets("Backtest Target").Cells(12, 2) = "Q" Then t_scl = 3
+mdl = Worksheets("Backtest Target").Cells(17, 2)
+For i = 1 To 6
+    cst_sch(i) = Worksheets("Backtest Target").Cells(5 + i, 10)
+Next i
+'
+cuscol = Worksheets("Backtest Target").Cells(21, 8)
+tickcol = Worksheets("Backtest Target").Cells(22, 8)
+mccol = Worksheets("Backtest Target").Cells(23, 8)
+btmcol = Worksheets("Backtest Target").Cells(24, 8)
+dpbcol = Worksheets("Backtest Target").Cells(25, 8)
+eligcol = Worksheets("Backtest Target").Cells(26, 8)
+eligcol2 = Worksheets("Backtest Target").Cells(27, 8)
+reitcol = Worksheets("Backtest Target").Cells(28, 8)
+ffcol = Worksheets("Backtest Target").Cells(29, 8)
+rtncol = Worksheets("Backtest Target").Cells(30, 8)
+bk_or_btm = Worksheets("Backtest Target").Cells(24, 9)
+utilflg = Worksheets("Backtest Target").Cells(27, 9)
+reitflg = Worksheets("Backtest Target").Cells(28, 9)
+use_ff = Worksheets("Backtest Target").Cells(29, 9)
+'
+mcrng = Worksheets("Backtest Target").Cells(6, 2)
+mcrngl = Worksheets("Backtest Target").Cells(7, 2)
+btmrng = Worksheets("Backtest Target").Cells(8, 2)
+tbill_use = Worksheets("Backtest Target").Cells(33, 2)
+hmcrng = Worksheets("Backtest Target").Cells(6, 3)
+hbtmrng = Worksheets("Backtest Target").Cells(8, 3)
+
+'
+' Get range of dates for backtesting files (do NOT use this section if using Target sheet!!)
+' This section should be commented out if using the input worksheet
+'
+
+' dt1 = InputBox("Date for First Period (MMYY):", "Data Range", "0106")
+' dt2 = InputBox("Date for Last Period (MMYY):", "Data Range", "0514")
+' mdl = InputBox("Sort Type (1=MCap, 2=BTM, 3=Indep):", "Model", "1")
+
+' If Len(dt1) = 3 Then dt1 = "0" & dt1
+' If Len(dt2) = 3 Then dt2 = "0" & dt2
+
+' pth = "F:\User\DaveK\Accounts\KMCR\Analysis\2014-backup\Historical\"
+' pth = "C:\Davids stuff\Fygenson\Research\Small Value\Backtest\Historical\"
+' pth = "C:\Davids stuff\Fygenson\Research\Small Value\Backtest\VCMT\"
+'
+' cst_sch(1) = 0.0134 / 2
+' cst_sch(2) = 0.0056 / 2
+' cst_sch(3) = 0.0025 / 2
+' cst_sch(4) = 0.0013 / 2
+' cst_sch(5) = 0.0004 / 2
+'
+' utilflg = 0           ' 0 to exclude from BTM, 1 to include
+' reitflg = 0           ' 0 to exclude from all, 1 to include
+' use_ff = 1            ' 0 sets default FF = 1, 1 uses adjustment
+' bk_or_btm = 1         ' 0 to read in BTM, 1 to read in book
+'
+
+Application.ScreenUpdating = False
+Application.DisplayAlerts = False
+
+'
+' mcrng = 0.1                 ' Percentage of market cap break (buy)
+' btmrng = 0.25               ' Percentage of mkt cap BTM break (buy)
+
+'
+' Calculate the number of periods
+'
+
+m1 = Val(Left(dt1, 2))
+m2 = Val(Left(dt2, 2))
+y1 = Val(Right(dt1, 2))
+y2 = Val(Right(dt2, 2))
+
+nper = 12 * (y2 - y1 - 1) + (12 - m1 + 1) + m2
+nper = nper \ t_scl     ' Calc number of periods given monthly or quarterly data
+
+dt(1) = dt1
+For i = 2 To nper
+    m1 = m1 + t_scl
+    If m1 >= 13 Then
+        m1 = m1 - 12
+        y1 = y1 + 1
+    End If
+    ys = Trim(Str(y1))
+    If Len(ys) = 1 Then ys = "0" & ys
+    ms = Trim(Str(m1))
+    If Len(ms) = 1 Then ms = "0" & ms
+    dt(i) = ms & ys
+Next
+
+Select Case tbill_use
+    Case 1
+        tbill = 0.002852446     ' Average monthly tbill rate from 1/26 - 7/14
+    Case 2
+        tbill = 0.004144924       ' Average monthly tbill rate 1/65 - 7/14
+    Case 3
+        tbill = 0.00388306        ' Average monthly tbill rate 1/80 - 7/14
+    Case 4
+        tbill = 0.00295102        ' Average monthly tbill rate 1/86 - 7/14
+    Case 5
+        tbill = 0.00256461        ' Average monthly tbill rate 1/90 - 7/14
+    Case 6
+        tbill = 0.002311882       ' Average monthly tbill rate 1/92 - 7/14
+    Case 7
+        tbill = 0.001571029       ' Average monthly tbill rate 1/00 - 7/14
+End Select
+
+'
+' Read in all the data
+'
+
+Application.StatusBar = "Reading data files ..."
+
+' Assign columns where relevant data is stored
+'
+'
+' FIRST 8 ARE THE ORIGINAL TEST COLUMNS. DO NOT DELETE OR OVERWRITE!!!!!!
+'
+' cuscol = 1
+' tickcol = 2
+' mccol = 5
+' btmcol = 6
+' dpbcol = 7
+' eligcol = 8
+' eligcol2 = 8          ' Utilities flag in same column as eligbility flag
+' reitcol = 8
+' ffcol = 11
+' rtncol = 12
+
+' cuscol = 1
+' tickcol = 1             ' This set is for VC sims on 8-7-14
+' mccol = 3
+' btmcol = 4              ' Default calc below is for stored book (not BTM)
+' dpbcol = 5              ' Test column. Can be any variable
+' eligcol = 22
+' eligcol2 = 23           ' Utilities check (sector column)
+' reitcol = 22
+' ffcol = 11            ' No ff adjustment
+' rtncol = 26
+
+' cuscol = 2
+' tickcol = 2           ' Modified DM simulation
+' mccol = 5
+' btmcol = 6
+' dpbcol = 7
+' eligcol = 8
+' eligcol2 = 8          ' Utilities flag in same column as eligbility flag
+' reitcol = 8
+' ffcol = 11
+' rtncol = 12
+
+' scl = 1               ' dollar scale for mcap. Default is 1 if mcap is in millions
+' scl = 1000000         ' use 1000000 if mcap is in dollars
+
+For i = 1 To nper
+'
+                        ' Zero out analytics variables for each period
+    prt(i) = 0
+    wtmcap(i) = 0
+    wtbtm(i) = 0
+    ret(i) = 0
+    brk1(i) = 0
+    brk2(i) = 0
+    nsec(i) = 0
+    univ(i) = 0
+    trns(i) = 0
+'
+'                       ' Read in raw data files
+'
+    Application.StatusBar = "File " & i & " of " & nper & "."
+    
+    Workbooks.Add   ' import data as text with first two columns forced to be string data type
+    With ActiveSheet.QueryTables.Add(Connection:= _
+        "TEXT;" & Trim(pth) & Trim(dt(i)) & ".csv", _
+        Destination:=Range("$A$1"))
+        .Name = Trim(dt(i))
+        .FieldNames = True
+        .RowNumbers = False
+        .FillAdjacentFormulas = False
+        .PreserveFormatting = True
+        .RefreshOnFileOpen = False
+        .RefreshStyle = xlInsertDeleteCells
+        .SavePassword = False
+        .SaveData = True
+        .AdjustColumnWidth = True
+        .RefreshPeriod = 0
+        .TextFilePromptOnRefresh = False
+        .TextFilePlatform = 437
+        .TextFileStartRow = 1
+        .TextFileParseType = xlDelimited
+        .TextFileTextQualifier = xlTextQualifierDoubleQuote
+        .TextFileConsecutiveDelimiter = False
+        .TextFileTabDelimiter = False
+        .TextFileSemicolonDelimiter = False
+        .TextFileCommaDelimiter = True
+        .TextFileSpaceDelimiter = False
+        .TextFileColumnDataTypes = Array(2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1)
+        .TextFileTrailingMinusNumbers = True
+        .Refresh BackgroundQuery:=False
+    End With
+'    Workbooks.Open Filename:=pth & dt(i) & ".csv", Origin:=xlWindows
+'     hdr = 1                                     ' Number of header rows
+'     hdr = 4
+    ndat = 1 + (hdr - 1)
+    eof = Cells(ndat + 1, tickcol)   ' Make sure this is a column with data in every record
+'
+    While (Len(eof) >= 1)
+        tmp = Cells(ndat + 1, mccol)
+        If tmp = "NULL" Then
+            mcap(i, ndat) = 0
+          Else
+            mcap(i, ndat) = Val(tmp) / scl
+        End If
+        univ(i) = univ(i) + Val(tmp) / scl
+'
+'   Assign tranaction costs (these are full round trip spreads)
+'
+        Select Case Val(tmp)
+            Case 0
+               txn(i, ndat) = 0
+            Case (0.000001 * scl) To (200 * scl)
+                txn(i, ndat) = cst_sch(1)
+            Case (200.000001 * scl) To (500 * scl)
+                txn(i, ndat) = cst_sch(2)
+            Case (500.000001 * scl) To (1500 * scl)
+                txn(i, ndat) = cst_sch(3)
+            Case (1500.000001 * scl) To (5000 * scl)
+                txn(i, ndat) = cst_sch(4)
+            Case Is > (5000 * scl)
+                txn(i, ndat) = cst_sch(5)
+        End Select
+'
+        tmp = Cells(ndat + 1, btmcol)       ' Read BOOK data. Will calc BTM below
+        If (tmp = "NULL") Or (tmp = "") Then
+            btm(i, ndat) = 0
+          Else
+            btm(i, ndat) = Val(tmp) / scl
+        End If
+        If (bk_or_btm = 1) Then         ' If Book data was read then calculate BTM
+            If mcap(i, ndat) = 0 Then
+                btm(i, ndat) = 0
+               Else
+                btm(i, ndat) = btm(i, ndat) / mcap(i, ndat)
+            End If
+        End If
+ '
+        tmp = Cells(ndat + 1, dpbcol)
+        If (tmp = "NULL") Or (tmp = "") Then
+            dpb(i, ndat) = 0
+          Else
+            dpb(i, ndat) = Val(tmp)
+        End If
+        If (use_ff = 1) Then            ' Read FF value if using FF adjustment, otherwise FF=1
+            tmp = Cells(ndat + 1, ffcol)
+            If tmp = "NULL" Then
+                ff(i, ndat) = 1
+               Else
+                ff(i, ndat) = Val(tmp)
+            End If
+           Else
+            ff(i, ndat) = 1                     ' Comment out if using FF Adjustment
+        End If
+'
+        cusip(i, ndat) = Cells(ndat + 1, cuscol)
+        tckr(i, ndat) = Cells(ndat + 1, tickcol)
+'
+        tmp = Cells(ndat + 1, eligcol)
+        elig(i, ndat) = 1
+        util(i, ndat) = 1
+        If tmp = "IPO" Then elig(i, ndat) = 0
+        If tmp = "AIB" Then elig(i, ndat) = 0
+        If tmp = "LP" Then elig(i, ndat) = 0
+        If tmp = "LLC" Then elig(i, ndat) = 0
+        If tmp = "NO" Then elig(i, ndat) = 0
+        If tmp = "M" Then elig(i, ndat) = 0
+        If tmp = "3M" Then elig(i, ndat) = 0
+        If tmp = "RP" Then elig(i, ndat) = 0
+        If tmp = "AEB" Then elig(i, ndat) = 0
+        If tmp = "ERN" Then elig(i, ndat) = 0
+        If ((tmp = "REIT") And (reitflg <> 1)) Then elig(i, ndat) = 0
+        If tmp = "Ltd Part" Then elig(i, ndat) = 0
+        If tmp = "Private Comp" Then elig(i, ndat) = 0
+        If tmp = "MLP" Then elig(i, ndat) = 0
+        If tmp = "Tracking Stk" Then elig(i, ndat) = 0
+        If tmp = "ADR" Then elig(i, ndat) = 0
+'
+        tmp = Cells(ndat + 1, eligcol2)     ' Comment this line out if util & elig are same cell
+        If (utilflg = 0) Then               ' Flag = 0 is default to exclude Util from BTM sorts
+            If tmp = "AUB" Then util(i, ndat) = 0
+            If tmp = "KU" Then util(i, ndat) = 0
+            If tmp = "LU" Then util(i, ndat) = 0
+            If tmp = "1U" Then util(i, ndat) = 0
+            If tmp = "Utilities" Then util(i, ndat) = 0
+        End If
+'
+        If IsError(Cells(ndat + 1, rtncol)) Then
+            tmp = "NULL"
+          Else
+            tmp = Cells(ndat + 1, rtncol)
+        End If
+        If ((tmp = "NULL") Or (tmp = "#N/A N/A")) Then
+            rtn(i, ndat) = 0
+          Else
+            rtn(i, ndat) = Val(tmp) / 100
+        End If
+        ndat = ndat + 1
+        ' eof = Cells(ndat + 1, tickcol)    ' original file used Cells(ndat +  1, 2)
+        eof = Cells(ndat + 1, tickcol)      ' original file used Cells(ndat +  1, 2)
+    Wend
+    nrec(i) = ndat - 1
+    ' Workbooks(dt(i) & ".csv").Close SaveChanges:=False
+    ActiveWorkbook.Close Savechanges:=False
+Next
+
+Application.StatusBar = "Sorting ...."
+
+'
+'   Now sort data and calculate period returns
+'
+
+Select Case mdl
+    Case 1                      '   Sort first by MCAP then BTM
+        For i = 1 To nper
+            cwt1 = 0
+            cwt2 = 0
+            ffuniv = 0
+            subuniv = 0
+            j = 1
+            For j = 1 To nrec(i)
+             ÿQ^*Å;½ BuT@P²ŸƒKà@DL? è`® 2^äÿÈÇœ€‰!G	 j"E( è ®ØğB$€0 $òŸ|Kì'`ƒª¦0Aƒ‹Ğ . OP0 ‚®âÂ¬qç2@(V!ƒ„ñŸ€K3"ì—O- FTæ  ìws2 €ĞH”-K@ 	´ ‚KòÀÊD„s‰(P3ò€H)2‘ şè‡†t8 4Ì1	 
+ôŸ€K‚‚ÈxB…7 0˜‘,â˜
+57	T,È@ö²œH	 ¼Y‹&K· }K
+Ê °ëF®[E	ø13ûı   Õ-:8=@œ"  €ÿ¸§{ï  	Œ<   ÷ ø{°J/‚(,ÿ(t s }K€sYp4  ‚ÿúAƒC	2 8ˆ+$ H´ŸƒKª€¨Àd, D @ÀK şØ tĞ`c)  0 ‚®@4 K€a&‚T	NKˆQŒ& „8óŸK •ÓKç>!”v lÿa ;5¹À%@R@èn³Ÿ‚K€@€rÎTã+ûá iX°‡ ¢½hŒG6D43	„£`¼3    p4¾3	h   0ÿœ†</•!|53 ì ŸÚ~2K
+ XÆ±p:s ‚K€á`ËT      
+Tr |Kÿá ÓhÇ2 M´c ’f€¡ lYO¿«À1(: OP0 €®ú)D€À- p½ ‰ÿÀ°A D¢æŸ‰Û“P e3 ®'A9ë€3 î8ˆêtò¯AÑP .C uŒ* ,è ®â_S*ï2F3		Ê£'Û
+ ü·s ~"„@l¸    !  (@ÀK¸   !0Ò
+@,2 d ² {Kò@@3¾\0to”À}Kø
+‚=:3¤D\‹' €Øo%"†) Üç`®t€  ®0 *rŸ€Kü' #*h0FsçÌ%	 ò†^( ®LÒ@2 ,1)ÿqP@”9­%ÀĞ1 @ğŸƒ®  H/Ş³ˆ=D"š@( $ ÌD²ŸK 0 ÷ ÀÊB 2 +ôŸ€K0 |…5 Í€%2 † Ğı¨ò!D`P" p¾ ˆÿÀ	°ŞĞ  DJv\ ?Œ+âŸo­2ƒ$DA$(°Ÿ‚K²Ÿ ‚8	 D„% 03 }K  P%ÿF ôŸ}Kûá`JK 5 I¨%  şôìv	ˆ%4Œs´Ÿ|KîP  4í1 I„Á‚KT$¤?)‚s#Í2È~LÀK° ~B¯5BQPŞ3 ÿùJG›ª Ñ@EÌ.@DÃÀ‚K 0 ‚ ƒ:D ì3	 şØ7¾‚2/ D’ „|¼Lò)DÉ"Bü
+DÁ‚KP $ ª20"u {K €¡Ÿğ–O 	%%$@ DñŸ‚KC…Ğİ9Úç@…pG   ì3JÀ ¸3  C@° ®ú   !3 ‘ÀKà?ÿ"ÚC@„’ğí37dr €KHAò1H˜@9¤d3 ,h`® @¦(Š/2 G°Ÿ€®©f(áF„XuŸ‚KòŸ 
+‚8 Ğ^ÀúÂ· !FÁx#t3şğG(
+’òU­2d HÂÀ~KÀ}8
+™M	 Üg`®™!ˆD,	ğŸ€® *„v
+şl÷ÑBä;  ¸€‚oŠs(Ü53 @Ù‡{Æ!$QqÎ3 €ıØ§{ \; ­+Gg1 ƒK 	B32Jë€ `@÷Ã"„@lO àÉ!T3  RŒ)º%œ&Í#	B Ì@e'GİÍv‹`3 ,è ®	Pˆ€Éœ-ñŸK¢  ¯Š5 ¤ày¡µ4U¨ÏàşN,•oôŸ~K,h_âÊ0Î!@x4¾3@IòŸ‚KF³
+DÑEÔ   ü—Os 
+  +Ó$ 0 ƒÉ	„–¤l
+\C‘+V"ˆY		  ü÷s 	JOJ  ± €K²e |‚3ú0 ®  4Ì€­îØ^ Â‚Ç	ö@„º ”C¨+	 şDÆv€ïoŒ#	0LñŸƒKÿá Š5: ?…[ƒ&’ø7!) (4 €KpŸÂ5E†Mé†) Tq½\2K0Kâ&$
+T1 }Kò
+ €mˆO:,		 ÁK 0 ÷S8€‚ğ˜ @3
+@° |®œölÿÉG %£¢0 À5äß) *ğŸ|Kş»çĞÁĞ-2 †4XÆ”	p2µ ‚Kò(Í= ES``"5 ‚Kû±ÈTæ=2 DA”  K`° |®ˆFA4Œ4	 P²ŸK "ìwO Ô-4 !Œ-  q }KşÛ‡!È-’R  İ. _Àûâ·î›So)w†MQ8_) 	è®•H!DR áA÷Ÿ®Ë/ìKúa¿ş	GCC  8¸]®` 4Àæ¡ X/xß÷Å•çBP€=„3+G €í%	–ÈøsGé6  ?	f$C¬" Ñ*  ÿö–pb CÜ.3  Á‚K€ÿ `ÅO,Ãç¾ „  ğŸKÿ€~Äx>7%˜$  ù{ÿåC P"FC‰u`i'\AB`Ø $*2 K@ ¾·5P*ğŸ€KóqÓĞŸ9  JE”];
+IqŸ|K ˆ   RI> ;$°Ÿ‚®$X/¾³6»$£ü3 v\äï)	@³ |KÿñƒÌ“9:Ã&¡;"3€öƒLFnØxB1: † Ğû¨ ¥‚ğí30\o3 |KûáşL¯> ö¬t6O )…%  4 ~KÊPÃ=Ş¦$Ğ‰ ‹F,1h 
+´+22 K" ¨5&äï‘Qènu ‚Kâ`…A2M2¨Ô@P ²Ÿ|KDPX/¦³7	P	¬'@È93p:2 }K8şB”/— IÃè) 	· |Kò    !ÜºÇÁ‚®   Ğî <=êGÁƒ®X˜ô±h¹Ğ¹¤}® ( Ôuã¨ığ\7à à¿wîª z<|ƒ…ì¡ûaiÃÊµçâ‹® Ê7œp®   ]Àø´	
+œ^F +‰´  €G?	VH¤'6O¡ÒÀØ32³@ƒÈPEåü¡–@(B·}L(ï(!@¸{C”K8\FK+    lŒ¸	RT€Ä  İKSÉ´â
+H6d€€ñ/Î0Øq%ÿ
+)¬&Ê@B¥ ;5œ$7UIDØ(.¿#¢üù3F7Áõ$p3! ˆÑÑ¹ $‘Œ` O`Ô´ ğ^@è´XAdXC¹)   `X`T3rĞ   . ,h ®`8/³	Êw‚'€
+@óŸ€KÿşL£ïF;úD¤ €  è ®²'`ü3    ³Ÿ~K	8ş  /G  wÊ$=
+.è ®ÙN7dØ3ÿ10PD….˜ œ53ã,¨  ®	È@ã¾h ; ÃuL`3€"£œÉ3d@4 }Kûq °©H/\    À> ?üÇã®‘Ì4WHóŸ{KÀ€ÈÇP”7	U$TH²Ÿ~Kşÿ»wò+@-!  `Á‚Kìç`ƒÉ¦0ö])g) öÈWî‚
+Dr¤Ğ-	  ì×ÏsN C@° ‚®.˜A„ĞĞ9`"¶ ƒK,è`¡H€00d¸/Î³ET@H†)84PÈ¡t8ğŸK\Æ‰´l ! Äù©  ğ^ÀôŠ·  K €% „íéüù3G  €ûÈ‡{ˆŒñ×`Dœ4$	°ŸKXƒB0;F/  !!K'	v }KÚB àÉq    @È  Op° {®°àRVÿşA"QhÊ2ø ?AÀK€áŸoXOTPq ‚KÒ/„Á8?À6,P3 Pà¿}#ªP¨€4¯1:<òŸ‚K° |ŒÒ: t@TÜ"  2 {KûA@"ÿ@€6
+—!P"· {KP$x/³,–D#M°"7j±0HZdæ]À¸¸O…ÑÑ¹ ;€p¤È3ÿ
+v {ÛF Ü$ ìç`®Kå-ƒÉ8‡4 ş(¹}J!;‡4 *Š ÿ şA„pJ¿ÅvÄd3/ (`®BCH…P`è3 Ø€Øo L$/t0²Ÿ~Kf¿ëF”   *Œ#  òŸ~KØïÒ8  X/¦³˜{³gPd(sÑ$<))>      C$0± K° e~øB;…†òÇ½3 ,h ®@4h@4®1(7p |K
+Jh`HĞ,34RÁ|Kø€ ŒGŒ‚DD6D
+Tq {KÀ‚@>Œ†Q	$b@Æ'J – ğÿ¨ˆ€–8Í;    ³Ÿ{KX{   /1ş9) ,(`®„nFa30l;² |K° |4‘:7 V­'€ı _ÁOŒ‚o(63ÿá`:¿¤5oCF$b ¨Ÿ®rY€T„, HÁ€K° ƒ.; 5…½„"‚…( 4 óŸƒK   .3¤+ \wòŸ}K; †E ÒëÃp	„  ğ(	ÊŸo©<23 d t ~Kr†
+Å;D · ‚Kò P€s¯T DÁK
+‚€€ìXO    °ı è`®  @`z¡µ˜TRi„ÉÂ%ƒ(Ø4 > `Y $3 “qe22 K °Ÿ€®@!2¡2ğŸ ôh‚Ëİ9  ğ^ÀóÒ¶@î`D2	%èwÃ$t0s }K¢ Ó>     p   sq |KRP   .>Cá“!Ü!3?
+± KRP( G É{ƒ' @éo{I€!U9Ÿ) .ôh`®÷ıÇÍ T-	  É'{ÁğÀø}ıªùA b àl\@²Ãk hòÁ@
+†BD@@À€K8î!H£=  h`®
+Ò " ‰2 PL‡ÁK¸JLŠ=0ó˜@À40HóŸ~K,è k†N0BG.CJ @òŸ~Kr  œGCp÷J!(.€{èï[ ^À÷‚·.OKå%ÿá`* 2µR$‘$ $8óŸ|Kÿ‘XÇ8‰%Ú$/T · |K„&á»5„4B\´Ÿ{K úC…° : 4 KÿqP†Àœ9ˆŠñç{B3G „„LOH‚ÑQ3 0ÿ|^¸Bà	ad3 ° ƒK( ¢ãB0±BbƒğŸ|K
+Xƒ¨„027…*‚& üg  ®FP§Tœ;² ‚K6K>KJë  à@ÿÃ2Œ@l KH…@0ş3wadNì
+PôŸ~K Xö!Î= P+À%HER(‡) şÓORş\F è^/*ÅM…ÑÑ¹  
+Ì&Âö¤è4?8 ”€%¡A	“ø.QH¸b¿(2  !PÈ"@{× L?€ €ø} „G„£!¼E3/ PıÈÇ{@ "‚è( H3 KÒÏ QÁ8OP €?'*`AÀ@T…_.7öLA…» ¶ ƒK
+Ê@Ó”9?IÀ}Kÿ~@Á}¹]@Ú  *(Ã®.¤+„?1 ƒKş€ğXOC0@ÆÀK şØŒˆB † Ğû¨@Â¿5B ?0° |® 48¶ ~Kÿ¡ ˜¤5¥±†@‘' ,è`® îƒ€L  {väª  °$ÇsöŒ ,Áô  Ğyïªá’ã3ã,¨`®@À@b¾hÖ»½ 	¬?Hf¬‚6  PMá)$L±Ÿ€Kh`¥@.0
+8Í$E]"J  ?1 K…5Àd$*TòŸ|K2BA”9B€[×It(	´ ~Kr @:Å;€DÁyP3  ì×_s 0èÀuÄ1 rŸ€K" Cˆ5 „'ƒÉ#@´ {Kr°R@Ğ.Œ¼Á 
+3 K(`…À†0C#¬& ,( ® (">?‘+O(¶ ƒKÿq "šŒGú@Å}ÿ©?@2X”À}K 2P†”^ AH/Ö³Öœ/02Ë€P. )2PéJ/Ò‹÷Å!¤TÀáLÆXîx^@”¹ŒRŠ&ò€IâÿF$8EEÁ‚KùÀ€ï‡O €€É‡{@¡ƒ
+Î2MÁKÿ€lO œ`{¡µ(R	¬'˜DèÀïï€@@(¨2 óŸ{K68bĞy,P÷BÅ.
+@÷%3¢`„PHä2…ÔPIÃ $
+´ |Kb_JK 5ˆECÀpŸ€KÀ‚¸'ÀÅ7„+	  ü÷s	<sQÂ' 0³ ‚Kÿq0aóV .E,ó$¢†€!¥‚T>;!Œf$:Ü
+@ñŸKÿ1PƒĞÕ9@ÁP@C 4 €Kö( d0RÀ~KO€öƒ|¤L? P`¿ª ¨¨¤(øf³ {K`AD€L ¯ˆoˆˆ 3 €à¿{'ª " 0´+ @0 €® ^Àø’¶HE(’ À° {€5>K!¡Œ% P€¹§{20‘@I. ?†ÌŸ ,h ®@A…"d2d T²Ÿ€KCD‘9>7HLÅ% è‡†tJ7	¬	ï&Fü !· |Kÿá ë
+®2\üE¡ À€¹{Áµ$P3  (óŸ~KÈW   ! _À÷‚¶ŒÜt\È"” ¿?w)ö şNî> PLÃÀ‚K÷ €s˜OEA!À J C 0 }®ş	™+ÅUÓ üç`®	EABaØ 	01 ƒK²Ÿ 'o†80(bÓ€É'{(ŒÀm½h>¯Na¼3   ¡ËÜp•±ˆ.  øö!L¦=ÍH/¦³2 œ3”+"€(0øf’ÀK!‘é{e'ãüg ®   – ¤½h°º,€á`ÊT!P@ƒ¸/D2 ƒKÿ9¨L¤„HJ @`{¡µ      –4@”PUÂUŒ)  ¶ ƒKRÌLÂ9 HB“:ü
+³Ÿ€K ±ˆ$  óŸ€K¨`„ „0ã¬ãœE3 €şƒ{°LFĞ  â0Ä TÁÿ T @ñŸ~KX{‚á”/ˆˆòÉiD32 GP° {®C	BÕ„C ,¨ ®„J‚!|¹3: K`° €®2$pòv„1€ÿ `‹T®€e
+TnúQ >àI:È ÀÀ~K€á`£‚OŒ&ä|"3 €`¿{ªò€É€!È†TˆÀ}KX~
+ˆ;$@8/Æ³B)ÒVŒ‘ˆó	*T3  @X$02Gî  % 5Œ  XAˆÀ7dD3/ Ü§  ®èØ(.…oôŸ~K8ıL€/ d  aÇ1 dP±ŸKüg`†¡æ0l,!M"6  s´Ÿ{KEGÒ *0 }KğŸ>¯„50Œİ£€K’¯àtGŒ.N7XÆ&   ì×ßs€§S`Ÿ4HòŸ~KîA ”;ë? * Ô­  ÌH/Î³	„vJ +  ú WŠ: C 0 €® €
+¥;5 ‚Kú„à†½„U*HÄÁ‚KC ü×7A I„)`"Tr ‚Kò_ !7’8 NAQ(o	ğŸ{K’Àì=6ğƒï`¤2 :èÂ®.Pò$˜-! @Éç{!£üA3  K °Ÿ‚® °àÒÃÿ° €‰5!C$ƒ#	Pt?1 |Küç`‡*h0K P_Àó´€   ¯„J#ï á¿}#ª`@b½h²!×"Ø#3„¥ãœ3 ÀàŸ„ÊYDX„µÓ Ôù¨L`@á½h€ĞŠEPˆ :èÂ®ı UÜ" @ğŸ®	p8/Î³FnSPC	„ ;„VX$/Ä `( ü ¿Œ‡TB Db?)	±Ÿ~KÏP€¹G{	¨  ½h…D#€$Rÿ1†€;     o+' è ®QÂÈ–)€ı`&ÄT±Ÿ{Kì§_‚à†0D0H/®³.¯ŒpËp3Øn° ƒKâ C	ª5	2œKˆ+O€„|”LP
+tnÊB 
+	0 ~K öÛ§P)Ä-şE ‚ë'®07 * ÁKÿ÷€s¯œa      @Û  à@÷Ã 
+@â½h  Ìò—)RP   ./.ÀA; è ®„©%24!     ôŸ€K8ş  /ˆ/¾³     ğ3 ¨Ÿ®âşFtÅ $° {Kú!À&ÿ[3
+DÁ€K€a`Æ	OÙ“ Ü3 şèÎ‚€JBù*t3	 €€ù'{úlÖ!l2 @ÁK 2^6;•h†&@*3 |Ke–”„< @$¡\b3şşèŒt DÁK2@  +îals´Ÿ|KCwQÁÀ~K8~ ²œG 	—) À€ıè§{öÜˆ Ğ-$öÁK	°Ÿ€ 	52†( +`
+ ° ‚K( £á,0$aì'P5 {K° 	‚5Õ "B(N ^°Ÿ}KÒ`	Í=ë` ° É@b¾h¹
+"œ<Q`@¼hÀNœ©…u®¡C1%®Ià2 æ¼h6ON¤`ü3 €ÿö@C¿Æ]"Áİ# ,¨ ®	”&âÛ3ø´ }KXƒ\nÈ;N†$(@ Í1âÏKÄ÷©×R   :~D00”Í"N	1 €KÒ	€î=Œ–Ô L†    ğ~÷¨ `T¨/Î³êËô 7Pßém˜tD·
+¢ÁÉ# 63U¡È%tw1 }Kr±%;8D4µî@ÙO{D°— ¶ h	À}@A„Q	˜¢!œ53>Kg˜$ ô­v`¸;äƒ¼„U/B  h ®ï 0¢ i   f@a½h  © „4 *(Ã®BB·,@3  €€ûØ‡{*¸ kªÿ´Á5Œÿ#  €ÙO{T`Ä- ÌHòŸ‚Kû¡ „^¸B 
+” ¢#K €¹{@ƒášÉ3ønv K° {  5     ğ. C0p {®6O (y¤&	 (`®rÁ‹ŠÁÌ/ B`BÀ‚K,H>…vH„Šğç›E3  @é'{§#Š[¯ÿPFIAeœ)! 
+T1 Kÿı20‚E §ˆ T  :´ {K`A½LK#I—4ÿ¹P¦”Hˆ?	"?!)
+BĞ µ`0*LÁ‚K°€=Iˆ/ ±Ÿ|Kÿ	: Œ<>ON!ü3ú  ì×OsJ~|–öl"  …
+5H(h0,è¥Çß‚®ìĞ›öpïªàá¹Ø£®ÄŒõü©    $èÜ¡ºĞ£‚® °^ÀûÂ·NG…VX$ €ĞÚ$Ğ±„…-7HCDØ ¨²Äè ğºÿ€ñT	Fƒ`ü3 D„v  (`®6 €î¯‚0/t@CÁ€K	é¸È(@:ğŸKö@Ğ˜P!$
+DDÁ‚K‚~@ÃÆQ .; ‹Ä% öØ¢t3 ıø{œ
+¢P`T”49—Š¨@IÅ'(w· €KrIO…&äü13 D¦v 
+´ }Kb K˜5      p×  `A÷Ã@€  ½h    oq`Aìƒ L@T3 {K,hŸq‡b0rY‚h ,PdoÁ‚K,HAò;HX}ª¡X/  &Ú/îq° ‚® ¡ˆÈ#;0*pŸ}Kÿq 82…GŒ,A€P†1p M²Ÿ{KX~
+ ;„#¢ì3?`° ı ƒ8F(d”4! 8²Ÿ‚Kìç`èæ03 ^Àóê· |    +!P ŒÛ£‚K÷q0„Ñ@@.æk|…À¨LKBØ	@ÅøcÈ30 }•:C âçÒp’q@¢ |(*à;2KD€Ğİ3€ıà(äT XâhĞ, P`¿|%ªĞ q‰2	dv ~Kâ
+Š‚B	      %  GP° }®€B‚HØ3(E2 €KP@„aè0d8ôŸKâ€@I¥2’@A2à2ü$Ì€­ Ğ^Àú‚·q¡Â„0¬œø7Ñ1€° ı 8€õ2¾4ER€	Ÿ)	 Ü×_@•-( …
+HŞ/ïà `AûÃH @æ¾h	     €îq° }®Ü@€ á'{  şƒ­û0 ® L±€	0À€ÑQ‚9 8ùò¨  ¾Íg ®ÿ€xÏë¡üÈ wà¡ `áú¡à¸s p¾ ˆèÀ6/B0”   @… |%3 P    VADRø–)Uâ5±¤`ìC!î˜p(`Ü¤( ˆ½„
+”(ÖÂXç¤ ’Ta/))F€]¢Š43 NG…+0‘ÆEÁ5 áá 4¨Á
+  6C€+”
+Šë­É# KèrÃ~…](
+F +DØØÍ C€d­' C!     ü0H/B³r    ,P À‚Ç	     ( @€zÜş”RJ)¥”R      û	  š    ¤¤   % ¡   „    lI!J @R 
+  ÁZ	€2 Ø	    	H @	`€
+Ij,  Ã `Œˆ˜H  l    !H €$  @ ğ "²¡ß Ì   ` 0 ü	©KJ!Œ6iÀ‚0JŠ"Œ ¨!  BœBQ”( EEàš) (   Ø € @@ H  (0Á,        h    tJ))€ € €	  	0 h P `… *@v Ğ    ! $  D	 ä @!	 $! `  M@ 	  €    H€    € Q‹ˆ €¤   À‚'.B <     	
+ @   H     !  h 	%	 H  %I¢D	0  ğ	  &     ’ XËBŒBÁZ  ` 	  l[Hô	   
+ €   Ø"     `dÀU(¨‰	  I"    Ã     	 !  ìI D” !0#  €$   ` U   P  IQ 8    „ @.(  
+ K € ’±
+¥  D (B @ ªm `&ARƒƒ$¥ !&C@DİLD(A*•%" œC€ÃpXr	) €$€ $@‘H0Ø$	  3  
+ #  	 $IB Aâ  0 h)
+ H @@ €ˆ°“6°M   $ €H !* $    Š    TUA   $ 9    ´8@“	 + % °   " Ì"U   \   ’  0@$I 2 C$	 	 c  l²4 Œ‡   ÄH  0€    @D   „0 !Ø™$’$I@  A°$ €	  I  	€±@   	  @,  ÀØ@&      8  H 	     ˆ@  `ƒ* I €@ À—ÂSA€$  €
+    ¨	‘’  „B  Ì D  	€*RB Q±°s |     
+  ˜DHÈD @$!  	 ÀûÀ0 H%!@ˆ®    4 	   ¥ IC l )¥p¢w CZÏb ôĞÖ‰@ FA €€¤€@‚  Ğ	QÄŞ      õr"     Œ@šYõTTŒºD¨ ³üT¨ 0*Ì×@ÔPM¥¨ @ß œHPi­Sv ğŸBµÛÖÀàÃ±3€åp‡ê4p	å4[õ&Úf8t‰ãÈ+©^	 Ê¹T  ‘ĞZTD7 Gõ üªJĞ~ooÙ €··ôÁS  ÀXUõĞSD7 GõùS  mO * "d­våUT J³ÜTf8t‰ã$    OÑôH`„
+õ.  •ûÍ¦à3¨÷f hh h¬ªl    ø¿Ş   D/ı¼h4 À¶ˆ¼½â4 `[@$ ´8€  0jû ĞÀĞ6   Àaõ  €ó´€Æ>h  õ=õHB€ò.pPİ×ĞT(¸a‡Å  º-Ğ Ğ}4 hœ H-lB  €TÑôH`
+õ  T
+èxj           ”       5@tÓ#îèÍ¨ À‰¬·  ˜§¨p^r„f¾®† ,± J4ş‚ïÁh  X   ½ŞMôH Z
+õUè‘À‡è¹˜À´M
+˜ÀD‹ÂÂà¸D‡Æ4 h¤ Ä¨l€öâ'j  5 (èB!@†&Ğ Ğ}e~7 à÷Hè ¨ @í‘ß\¨Pê-ÿ$ôH ”
+õvÔ˜SY³¨¤‚ ´¢Tf8t‰ã=Ö§Ğ Ğ} èHN£³€ KĞ¾44   ¢^ãôH v
+õ4¼¨OÛ³ˆ£ ´¶ X`8t‰ã h  hÄ¨lLàB	õa	˜ÀD‹Â™˜ÀD‹ÂD D 6²pD ‚_$‹dwŠ@$‰dôHÀÊÂ¯ S3 GõÁD`¬±èoom  ÜOõe¼½µ¡ì¯[    `Uõ ÍÁ:€Ã(=ò‰
+à°X  €äÁLĞ×À 0¿hoom `TUõ²ªz{Ë ´J€ÚpW3 @4 4C J.8  
+õ   Tf‡Å    ÀŞØë}½Ö$ f8t‰ã £*[ÿIS €  ÓZFSD7 Gõ4 4q ˜ JÏT  €†Ø2YîF½ÿ=’Õ) óa	« P£ò  ¼½e õîª¾½e õ ş¨Ğ Ğ} °  „¬·÷,Â*,HlÜ[\D, ³îX @³èSD7 Gõ p    5 T ~§ò 8 @ßÕ3Ø pÉh€õ´ jß@Hñ  (½ ø=  ½ ÀÖóôH u
+õ à –Áİœ€[\D, ³à ° À*³·    €Ü      "$¨T­¢	  €æª·   °SUh              4R ³@  „ h   0‡6 L`ZbõÑA`5
+õ , fƒµv†€À×² gíhA5h-   –¡†œÀ`6k¿_ Î
+X° “<_&äJ–;Á°àí4- J œM·w  (-X³     	1“eı·Ñ” ¶‰xğ;  ³‚=IÁCØ<aÊ”Ğ!lC <Ç
+òŞ6@€àÊ ñQÖ1H
+ë”ó„©9H
+€€áéÄÂs¨á9ÄÂ{ `¨° 5   `b‰2Y@ 8 @à€ h   ø!  õD @`mA‚„‚‚l  ±ÏÍ'‚ƒdDˆŠˆDE!+D zÁ „¦A B$‰d8™ L‚¹a	0q¢Å‰ª·	˜ÀD‹ÂD P@ˆ¹iªû ³ÁD0ÜÒèKÀÄ‰Âx ğ_ÁÄ‰Âè€ 4ŞèÁ 0H,‰4AˆŠˆˆ†l¼…‹€p H)€x p6 T;UòA D ‡DD›D è…‹B A D‡Dœl0)ƒ‚ ll €@t‰â"X€¨Æh› `Âz$¶Ì=°zä‡Ì¼ Ìz¤‡Ì""¢¡›ÿA ‚ ‹d  8OöiPù à =P ĞP½»h €À P½»Âè‘ £ ¹6Ú#}èµ x ?ÑD®M'˜ÀD‹Â#€ ¡GõÁ`‘H,‰4DˆŠˆˆzlîÌ‹‹=! ƒ  3nDDEDDEDJDå³/B$‰d€ ( Pchà€pà à  5D H¼€ÉáAABADEDJ/‚Aá"	ÿ€ 8 ğdhÁ] àQ*„%`¢ŠÈàÀ ù‰ÃA 8 ‹‹E ä
+ƒ‹A A ‡DD›  N†—AB›+ÀÀÿ•»‚ˆ®¬ÛÑôH`V(õôH@PõD ÷&ÌôHèWåE$R‰4.‰Kò’¸3Dˆ¨ˆˆÎl®ôJ®äV^)€ö"“Ä•TD ¸_€ô‚´ô„`nÿ~‚Aá"ÿD ˆ —µvA   ‹‹Eé‚ ³A A „DD›  8Li€<à€6! 8 ğ<¡eE#L  õ,Óaî‘æ’TôH õ ,dY ³D D ‚pA‚„‚ˆl  QÏÍI‚‰d   ® J    ğQ´3¤ Cõ¢f8t‰ãÍ °İôHèô B	ÔUøP	 õ X¸·z °Ê ÷» Ìz¤–ÌYÖz$l Ñãep€Yç5Îp ±h    ši     ƒ#ÿˆh   yU)-rI— 
+<ÃAQfU¥¨¢“t9€3 ‰æ]Q/¥+ŠBq’ "$¨T™¢ ¨ @i«·  h°§l €4 €Bà € Ä  Ä      ğ   Hˆ L*À j*q –) @Ë q€8$Ñ  "ÀàËh  °¢ ´è¨ ä¹ô—f8t‰ã'¨ À°%´0T¨ Àn«·Ñè‘@´!@¨+ÅPõ h(M{$³4 A44 ¡J P °ƒI.8 ´
+õ4 `Uf‡Å!¡
+°@Py @b8t‰ã@€ È©j€@@ĞÚ4ôH …
+õ.‡­½› ÀS…³  ,' Ö)[ÀåL°œ(=â§Ğ Ğ}õ…6` õÑôH X(õ=°Í	?õï Ìz¤‡ÌŠ
+…ÅŠBÿ -–¬?©RÁ[3*ğ,,(l ¨8UI ³
+€(àš)=tP õø  ÀG7è4 ^  ĞD œ0<0³ÑôH`y
+õ¨  d§jØ¨ Ô¹ÂTf8t‰ã=|Q6˜ îÎ×®Tf8t‰ãÛ+i  U&X  óõ\T° €n³· î©Ğ Ğ}Ö=°.¢uh4 Ğ§‚µÊÖ4 Ú€¦3 4à&Ğ'”R õ¬Tf8t‰ã ° j€	5°=ôH`o
+õJÚnë& õx F' Ló; €İ	Oö–u¬ i  @ƒ,  PĞ ­ÓF¸  j
+õ.l1¨0\ ³. p€Ë‡ÇÑ¸ Ñ xªòh]  ÷Jõ`V²…µ>’-,,Ò!l–°ú˜eh X €pWõàXX¸DÀ³~T° €%ÌÖ ¾¨Ğ Ğ}Ğ‚‚{@ÿ  Œ¨T° “ÑôHàj
+õ  Ñ ô¦ò¨]ãv%õ¸Tf8t‰ãsT ° O p‰ ¸µu 0a 8°· À”jañXP¡£J@P*Uf8t‰ã=¦¥Ğ Ğ}¬TôH|(ÌÙW  €O0Ã 0ÃÕ hpjU + A k „4J$`À ï¨ ¸@-3½	  °ƒ‰A Ğ  4!õ4 -¤3 ¨Ğ Ğ}Ğ‚‚{Fÿ4 Œ¨T° “İ ĞàJP‚TôH õ€K4@h)€€EĞ†4  €ò/j     CBÿ       54– ` 0l Ü[ Ê©ò ¸€½ˆß 0 ÃÕû œeè¬ò øáAĞ¸ ¨ @„¬·rT¨ @UÚÖ Tê`	dõ  ”àí-õoom  Rõ (*«ì õÀE:ä2¢­&“ Œ`ø!jYUÅY¤) c ’‘QÒd „3fUD `kåS— ôh 4
++L Nh 4+.8 ³
+õ  @Uf‡Å4 U‰_•ô=¤Ránv¬ØS£³4 Z°±3“S  Hğ†¸SD7 Gõ  ä  õDTAdõÈTf8t‰ã   & :.8`¬
+õ  Uf‡Å=’r*à°g  p§ÂJÒ×ÑôHà‰
+õ ¼h h§l .Ğ @Ğ-]ğ´Ò©³]ğ´\"³E˜$l4 p¨´¸ Ø ´ Øm@=‘ß Nh hx§l  ØÜZØtU  Ë¶Ü¬UfİZ-ÿ "$T¨ü“Ñ3* ³.öB­v xc‡ÅÂĞ#=ì‘äW P×ÀW ¨€ÅÌÖ5€‡‡ Øè"$Bªl$¨gÉ-H ,"“;"$Œ!l`Ø8¤Œ ÿ3X$0 ³y	69$À=`!:¨V@põÿ,€S- ò    æ•ô4 Úâ¸34 Ú œ3!@®'ä}ûS 8N{$ò¥µD7 Gõ    fB´  \«„ õÑôHÀÒõ=0:¤¨ñU  N@€ò¬2€Åıî4ÿ PU- òäÀ¶ À¶Õ h¡(,4©Z-Ğh=8š ´T èL£òxTD7 Gõ  . Ln4 @Ğ3 h ô 7À 43 4 k œJi )@‹Ğ3U  @O–¨ 8•µ=*,,\"l 0a€%¨·*,‰¥+\"8„«t  °¥²iÂ× 0X¢º,, "Ğ  ´ Zp34   @£Ò~=„–¥ãcõ7`˜õlz-Ğ Ğ}  Pµ Û´=’Í)@ƒ[v ØÙN£³ÑôH p
+õ4rh h§lµT4 ô@F\ ƒjürÿ™Ã¶ À¶ÕîôH@²,õaXL õµT    ´¦……Å¨tÿ €åª›g6-,,Ò!l ”0`­½S›,XV¶ ,ÈU+ ³.8 §
+õv ÀUf‡Åw€;pµ3  % @Ô^Æ àûcõçS €€N=Ğ‹èî‘æI Ìz¤‡Ì @°DÈÆÌX¨”W ³Ì X @u‰à¨Ø ³4  Ğ ´¨ò  T
+n/j  %…A‡|ÿ       MaÀŒ0jŠ  Z}ÿ â›}ÿ4@[4@+h)ãôH t
+õ Ñ8OÛ³ .À Ò3 P¯$ˆ%õo  ^ z›C“ sÒ3.pÀJ´ÊXl3³ ¸ˆ€…­u€U†ÅªÊgÑ©,Ê»4 € Ğ¸ÑôH ’Yõ4  Ğ €¦ò( @ØV-j       	      Ö^   @° k      4 ˜Z  ³.8`¡
+õ  €Vf‡ÅÑôH`z
+õx€ ˆ¦j.8 Œ
+õ  0Tf‡Å4   ÁÖ^  €†/j     Ãmÿ &    =xP·Ş!@  !ºõ P N{$³    	–^.8à
+õ  @Sf‡Å=ô!^õ	,z£l	e^J,ö!l	 @°”½d	,ä8l4 Ğ§‚°·w`¤‚4  @Ş)DC]g  nÈÙF7 Gõ P  ;€:1,  ‚
+õ èÀA³¶Bh „h€¨l=ÔNÁ õÑè‘İ×èSİôÈ(Æ ° 45ÂôH G
+õ*Rf@´  0 À
+q4 Ğ`_Ô³  ã p¨_  L/¾h!/@³ š44h hI +4p € 	:`¤
+pBP @ÄÂ·W %ÃÂ·W4 Ğ`T- ³=A Œ»àXXìA€³àXX\D, ³ĞXX¬2, ³ØSĞyî‘æj ¨P,  j :!¨
+ `XUf8t‰ãÊrÖ   õ$ «©ü)ÿ,¦,,‚«l  Âk‘_²b™Z3–ğ
+@‘Æh@/ ‰j§_* P•¶u7ÿ 2h hŒ§l=R• ‘W4  @P£³A ğ n@}ÿv° [  ³=X™‚ ´ÅÊöH|(ÌÙ.8 dYõ  àRf‡ÅxÀG `  ˆTäº!õBQ,€’À4 ÀÌV=“ÿ HÀ…¢3şsX‚´}<X  ğÁ²TĞŒî‘æ  î/ r         Àÿ
+  $0  Lg 9 KĞ3 H ˜À e@i@·( 5 (€4 ÚÉ°÷3 @ôHào
+õC (¥PœŞÊ 0¸DeÆ  P¥2$Ì×Št&&K, õ)A€ ¡Gõxˆy#ó3ÿ=ğaî‘æ.8xİØÁSÈTf‡Å»¨ À‰¬· DHPë­SÁ\3* ³ ØÔU¨·Ê X à”+õa±ªò™ÿ([ğÜ³    ÕaõI GÒ34  (=x¡ ´j,é½Ö;Ñ×°J »  a8t‰ãˆ @ ì©j.8 £
+õbU\Pc‡Å.pÀ`´x f‡ÅW Pc8t‰ãp‰€C ¹ @Ñ3è4 Ğ@_h ³w€û À3  k @È^oom àYUõ’ªz{Ë ´TTO ³ ¨ @İßUTTT ³RTD7 Gõ  . š@ÓE  4 ¡Xõ
+¬½e  õ Ø  B´äÄ*L`í-õÑè‘Àô´=„ Áõ ‚h
+ T§lA4@Ò3",,J,"ªlñ`µªTT•ŠÈb)Y3 ¨a@	°·U%ZVi)&h Lhˆ©l0€0   +(  `L x@¦/dõ     ”5	   @Èô£p  S\"p¹HI³ìnR4İŠq 
+––µ>]ÅbéZ3œ–ï£õµX3x)ÅBo3œ_-_J_ø”…b¡·3B±XºÖLÿ€]–E—µ>HeA-KZ(]`Ö §µ>JÒZ”µ'‰è[ ÷Ç,  @ı–¸	1ÈÉ` õ  €m"õ€(<‰Mhƒ	Â‰0($ÂØi$¡"C" d$q&C"˜&Aq(0PfÄ8"ŒD Šÿ	Â0Œ$œ(*$Ø	‰€I2R	Â9 †$œ($‚Ip   Š   L pah  ÀÀÁ€0À  ø!8àSD @à&mDz† À,ÿ˜ “`.‘ÿÀ8ğ€  À÷FÿË7     !A B$‰dD È3€‚¹A , ‹‹=½š—BA›"AôH|(ÌÙ8ôH õˆ@,‰dD è3@‚¹A 
+B$‰d  À0ÀL‚¹  8  h=ğPìïçE p
+3èÑ ¶ßù‰¦""¢›ŒÿA ‚P$‹dÑĞ#-õùÆnnà9lD8Æqcà3 Ú"ƒd7s38s3n)ARÎ9nÚğ-Œ‘À 
+–¨µ> pÈµ{–°n…%h  J,@-,*lD 4X° “""¢¡›ÿZˆ—À,“ÿÍ PÀ@3°·û%ÂÙ#úè€†,î‘æâĞ î‘áÂè‘€‡´¹Y dµ–dõ T³Y è@	²¹Û=ˆ«¿Ô,Ê®-«Gõ7Ğ#=ì‘äE¹m³"""=›Šÿ*: “`n‹ÿ+ À¬¸0è‘€‡ğ¶˜!ğ¬‘”&0Ñ¢°ÿDÀ]†ˆ¯èDz† À¬ÿ˜ “`îÿÀ‡ÿ@ àQÍ øg€É‘ŞÂz$À+`µ 0zä‡ÌD ‚G DDz† Àìÿ. “`î ÿ p   KL˜È¯Øpn0q¢ğŸÿ p„ 9 ò  ğÔ      x <   6<NbIõ õ9šx~t{]ÿ‚îbl´Ä‚©Á àA´U‚!l`€Gm ÿÀ , iÃ#¬	34É‚B4$ Èl‚ö£$ h€Ç–ä	D÷Ö¿„ğD¬4`­2šmÿ‹J**-."l Xe€…­u"Õ
+€¤ª‹g 0 .0  3@ à(ŸTŠ € Nº° €‰´·4° ¸P- ³ À "94  fhĞB™ PˆÇ„ô4   @nâ  &lìcõTôH`ËõÑè‘Àø´v  Ø\¨ò‡Bµ·¦€%õ  0ÍV½Éÿl  ¶ı´æ  ¸º ÀºŞ ˆh h -l  á©ZJÿ |Ğ ½ Âè‘@¯”´ ˜H`?´|=0I„©ñÚB*ºõöÙF7 Gõ ©‚" ´ p‰ 8°· f 8°· $T- ³‘€äK€†T‘    Í¶Ö=ÈßÍ¶Ö Ğ|Q£³4@ë4@Ïh)4 ÍX”4e  H F¤B h.ì v+àXXüSi ³ ,  ¢µv (X°à“Ñè‘ B°· @ôH 
+ õ.8`9õ=@f‡Å®> Ìz¤‡Ì‘ôH õÉXìRKÒ#²ªÚd
+@(`Yº-$r!lUµ‰%£À²Å.µä#2@pÀXRÊ"TQ¸ZÕ&–LÅ.  Ou ®QgSÜ ¸ë"SĞaî‘æ4 4c ¤ J=š Ü¸ ` hM£³°µ   Î-j=º©  `µèR Ìz¤‡Ì <«Š õĞ à¦*õ4 ÜTµ¡ì¯°ª–@@õy€ÚĞ0   5 (æH¾Ş ©`­²õÿ) °³ì4c `@Ğ3  € (94 4g ÈJ À #'ê¨À€µxTf8t‰ã±S 0BÊ	O¬SD7 Gõ Úğ±ì4p,¹_	 Òt4 4¥ J4@ƒ4@w)´à­
+ ĞX´ ¸Dpk­S. ¨1pk­S¨¨ µ”¢, h  hªl4H ­8ôH`¤
+õ ğ"aî‘æ ‘`æ·V/lV˜Ÿµ>~€XXRÅ7€@	 ˆªj7ôH `
+õıÊê‘À‡Š½4 €  õ ôMèK(  –Ğ ÍĞFõ  dõ  ˆ K´ AÀ
+ ˆ3 À¼e°ƒ]  Ñ î³  }·Ög	i  Í UÑè‘ a-´0j·PõîTf8t‰ãÉ ĞàO.‘C¼ö  M  `Rf‡ÅÑôH 
+õ     ä)  %$ S.8 …Nõ  8Uf‡Å=²d
+ ˆX9U °L£ò d Ïz €Ê ô» >h hàªl    H¾Ş4  m/M½h.8 “
+õ,U(¸a‡Å=Â,´ —ÅªTD©à¡ìíÿ=¬O n=Ğ>Î×.pİ×¶Tä@b‡ÅÑè‘@Ü´ÖE´îuh!(@˜uh=„ !õ ÌôHÆp4ì‘äÌ™0N ³:UpTÈÆXX”W9 ³–eYUUU´)´,,,Ò!l}lÅbk­2•JEk±X3 ¨ ğ«³ÑôH`}
+õ4 h
+©l$ôH 
+õ4Ì SY³=ø ´  àN£³ x! ¤q3 wk z ‰J4@“4@§î)w-°ld  Ğ À%õ HÀWK+Ñ38S °¶M
+0q¢Å‰ª&à¸D‡Æ ( ˜Q7³ €dK€ÆO‚ @ß­5ÿv ìL ”-l4 JĞ‚40ÀÎè…j €€<k  ¸.  LM€æ°ì4  k†4J.‘CüSM=8 f‡ÅŠ pÃz¤‡ÌÕ~¬*@UhU¨[Uhœ<İôH[Æ İ  @·h ¨¨[  ³‘ ğ~ »ò'@³­u&ÿñ'˜ÀD‹Âå7@æ÷Hè­Ë³´3?€`,ZÒ!lV &X ½w‚Á Ø¶Yè‚‚c›ÿÿ=T¨Ñ“   £ÂJÒ×ÑôHày
+õ=Øacõ4 ĞhN£³,’-,«lÉXX D, ³  d€…µu   ®B2°·l"(Äh†4 ØDĞ}˜ * |/jª È¹üTf8t‰ãğ  @ ´ ” ah ³ ‡`Ú4  A" Ôø; 0@ËĞ3  ˆÂ  ´    @Afÿ4ú Àìşÿ)P@*€!94 ‘"U  =È› ²¹4ø °M£³ 4JèH(  Ğ ]ÓF.8à›
+õ4 0Sf‡Å=¨œ ´è‘@İÖ @Ğ#"Í» 
+H,6ƒl$‹¥¶@3 ˆ!@€‚t`¤ )3( (¤µ=(H€…Åh<U¨  ˜…uÀK4Eh)W x ™ ¤JªªĞ Ğ}PUf8t‰ã=BÛ´iS Dà§ò¨S`Ø÷Hè.p@)´Ø f‡Å¦Tf8t‰ã €Öô34ªĞ Ğ•À"¹Ù Ğ nÑôH@c(õôH@·Põ T ØQ{³*   ZH  „ Ğ Ğ} Üvå
+bõ„ ì-8ÿ4 p€˜°·  3ıpDCåk†õÌÙF7 Gõ.p@$´  @óf‡ÅÕ< ­¿ÖÂà¸D‡Æ0   ¤©j  N¸¸¿\=„ ayõ·T €ˆ
+õÎÀ‚î‘æ&)Ş0z$³¤&ÍG’ ³T­¢”œi
+(  ZP¥UJÉÉZEQr2^ TËÂ*…"‰%&-  C(PZ7E•¢Hb‰ÕP@Aµ  ğ©Â ´ÑôHàn
+õ4& b ”§lvÀ€¦3÷ 8¬‚ ´ î¸D¨t ¸€0´øJˆG €«k  Ğ @1!õ¨€ÀhÑ3.äRvªòT f@.¨¹   ˜©ñv‚¡4à•XõèÄ²J´=¬M€
+n4 ĞXM£³1€ € lh h +&€Åp3.8 š
+õ  °Tf‡ÅÑôH ”
+õ ÌôH¹Æ ¼ HS{$³ E4 4ErJÑôH |
+õp‰€Ã—Â!@r¥Æ×Âè‘8ì‘ãXöH>³ .‘ªŠšN `ª¨U²=	¾ Jˆ @ @©j=„ ¡mõ  °2p§ñ   Àaõà Àö´5   §@:4@Ch@Ó(SÀQT4  N2€ ¡Gõj x! —,Ñè‘@$´4 h” ô§lÑôHà{
+õ4  Ğ T§ò4 À¶ˆ¿â4 `[@$ ´€ <0jÀğ 0¼([ € . ½JA4 GĞ3A4 ¤3,Un„Uf8t‰ã7 	ÀX3Ah h +Mh hB + ´+@£3ù+Œ õ=0ëH,õ€T$ ¾G7è.8à<
+õ<$3³c¶û$ €†ç5² ¼àŸ!j‡al±t3°bÖ3=€ÅcŞ  hUáÀÆ‡4 ˆ?ìÿaõ Ğ mÓ )=ø™ Ó7 ôH|(ÌÙjà¸D‡Æ  àT¯ ³=Ò 5|˜Q @è‘ İ×4r° ø&l @  ,.8à£
+õ=Øf‡Å  ¨ñ¢³ X—½ÖooÙ €··ô X @ÉJõFaÛÓÿ "$T¨Œ“š' +*[èÿ  ÌÀIh)³– 3J A L9 $Gô&# m@è(@8”+œjp,¨·P®€"à@Ğ34 !-¸3=LPA õ  Ü/+ºõÑôH@Yõ4 h
+ ¬§lXÀÁŞ  X4@4   A¨^.8`˜
+õ  PRf‡Åb  şaõœB©pMK´  ÒV} ÿ. k ¬ ‹J²  mO2 @qKÂè‘@ ”´= %zä‡Ì ôH|(ÌÙB‹„oÛÄÿ€ ¯ª„g*-"lW ’X@ò}0U@B›N, kp3ü+‰b	! ´.p@Q´l ùf‡Å4  · Û´@,©`	 ´=b¨ `q˜4Q£³Ã V¦<     i                ÀD ÿ  6   N€ MHĞÖ44  @[idôH •
+õ”R3 Gõf4 @Ğ3Å  -	O    G i     ƒÿ  À        h     Cÿ €5    4 Ğà[  ³ Aƒ m3`pi)qB-gKĞ~   ÍVı*ÿ
+9 "pS­T   |B´= šèî‘æşTôH|(ÌÙ 4¬ê n  P—T=ÿ¶ ­¿Ö 6š +=T @ƒĞZTD7 GõÑè‘@´ ” p§j @ ÀG¹XÑôH`Œ
+õ' BÜ·»zÀ—H‘‘2TÀ‚î‘æí  Àí´ €   Ğ€ @·/Z¸ÿ     ( 4ô   6U f8t‰ã–ÊÕb!Z3YHCˆ ³D ,ÀBuµU°¨  Áh À¨Buµxo  ñ(2    +  p
+ -…o  İhS˜–  ´ ì/$ õ  `Ì¶{· ü`Á×²T n¿õµUÀ`6k¿_Š X° “W»J,Y¼µ'ËãŠ³X¨4 ¾‚€êK  ~ QÀµ	1ÈÉ`õ	   €n"õÌ`4‚ hv°ØÁ¢2n)0ÄÌa¹³ „a‰¹ 7` 8#ÈÀD‹XTv3(|Xî°Ø(LXb²À(à˜5  ;6 i€À€x€P    ÀYõE-ƒ  ³A A€‚DD›DˆŠˆˆúl; 3Á ‚¦A D ‡DD›D è…‹B A D‡Dœ  `û@‚¹    €    ÀÆÿD€r?  LA ˆP$‹dDˆŠˆˆtl#À‹‹1!  Tˆ´ˆ@,‰dD Ğ3@‚¹A B$‰d  X1 L‚¹,Š)6’ÿE)&³A A „DD›DˆŠˆˆôl+0Á „¦<Ô#ûù†ÿ€$/ÌôHè @ôHà·õ@tèz‚‰dS‚Aá"ÿD |<€H¸6Dz† Àlÿ. “`®ÿ p   K @ôH€= õ=
+yP ¬| ôH|(ÌÙÂà¸D‡ÆL˜è­ØKÀÄ‰Âx ^ÁÄ‰Â° ¿ê×œÀÀô‰ÃôÈqÔ¿/ÌôHèD |<€H¸6A B$‰dEé‚ ³A A „DD›
+  pa˜ÄB   Nş5ôH õEUfğ ³A A „DD›DˆŠˆˆôl+0Á „¦ p   K!@à/ Ğ„ëDÀ¶bröHèAAEDDEDJDˆŠˆˆzl07Ì‹‹ôH ¦
+õrS3 Gõ=¨—¹
+=ôH|(ÌÙ     i               * ,,Şzlo­ËÊA¢F  Pµ1 * ,,!lo­ËÊA¢F  Pµ1  0 0°ÕT€eE)¨ÀK‰/    €ë       Ö.       Ñße”ŒÀø¶W ”Ê·µ>œ#C1ka$ŒÅ„ La¬EPp(œ#„+L AÂX2‹”¾x2÷ôAL1Ü[\D, ³/ 0¥‚µÊÖ  À  À 0                                                                                                                                                                                                             
