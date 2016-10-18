@@ -7,7 +7,7 @@ ini_set("memory_limit", '1024M');
 //define the DEFAULT of the datafolder, just the default
 //the input instead can be selected by the user on the fly
 
-define('DATAFOLDER', 'data62Btest');
+define('DATAFOLDER', 'data62B');
 
 define('IDIR', 'input/');  // The input folder which should be just ./input
 define('ODIR', 'output/'); // The output folder which should be jsut ./output for all results with timestamps
@@ -163,22 +163,22 @@ function intersection($s1, $s2){ // si intersects with s2, in both s1 and s2.
 }
 
 function rtn($p){
-	global $mkt, $rtn;
+	global $mkt, $prt;
 	
 	$ret = 0.0;
 	$tot = 0.0;
 	foreach($mkt[$p] as $s => $m)
 		$tot += $m;
 	
-	foreach($rtn[$p] as $s => $r){
+	foreach($prt[$p] as $s => $r){
 		$ret += $r*$mkt[$p][$s]/$tot;
 	}
 	return($ret);	
 }
 
-function cst($sz){ // to decide on the level of costs of buying new stocks depending on the base
+function cst($m){ // to decide on the level of costs of buying new stocks depending on the base
 	global $CSC, $CSB;
-	return(($sz <= $CSB[0])?$CSC[0]:(($sz <= $CSB[1])?$CSC[1] : (($sz <= $CSB[2])?$CSC[2]: (($sz <= $CSB[3])?$CSC[3]:(($sz <= $CSB[4])?$CSC[4]:$CSC[5])))));
+	return(($m <= $CSB[0])?$CSC[0]:(($m <= $CSB[1])?$CSC[1] : (($m <= $CSB[2])?$CSC[2]: (($m <= $CSB[3])?$CSC[3]:(($m <= $CSB[4])?$CSC[4]:$CSC[5])))));
 }
 
 function standard_deviation($aValues, $bSample = false)  // sampling std definition if $bsample is true, otw, it is population
@@ -198,7 +198,7 @@ function std($s){  // std for a set of numbers in s
 }
 
 function avg($s){ //average for a set of numbers in s
-	return(array_sum($s)/count($s1));
+	return(array_sum($s)/count($s));
 }
 
 function mdn($s){ // median of a set of numbers in s
@@ -217,16 +217,19 @@ function mdn($s){ // median of a set of numbers in s
 
 $TB = 0.0016; //T-Bill Average
 
+$CSC = array(0.0,(0.0134 / 2) + 0.001, (0.0056 / 2) + 0.001, (0.0025 / 2) + 0.001,(0.0014 / 2) + 0.001, (0.0004 / 2) + 0.001);
+$CSB = array(0.0, 200.0, 500.0, 1500.0, 5000.0); // four intervals
+
 //get the output file ready
 $SUMA = array('Date (MM/YY)', 'MKTCAP ($B)', 'Max MKTCAP ($M)', 'Min MKTCAP ($M)', 'Return', 'No. of Secs', 'Turnover', 'Est Txn cost (%AUM)');
 
 if(!is_dir(ODIR . DATAFOLDER))
 	mkdir(ODIR . DATAFOLDER);
 
-$SF = DATAFOLDER . '.' . date("dmdHis") . '.' . (QTR==0?'M':'Q') . '.summary.' . CSV; //parameter file
+$SF = DATAFOLDER . '.' . date("dmdHis") . '.' . (QTR==0?'M':'Q') . '.summary' . CSV; //parameter file
 $fpsf = fopen(ODIR . DATAFOLDER . '/' . $SF, 'w') or die ("Can't open file: " . ODIR . $TSF . '<br>');
-$RF = DATAFOLDER . '.' . date("dmdHis") . '.' . (QTR==0?'M':'Q') . '.result.' . CSV; //parameter file
-$fprf = fopen(ODIR . DATAFOLDER . '/' . $SF, 'w') or die ("Can't open file: " . ODIR . $TSF . '<br>');
+$RF = DATAFOLDER . '.' . date("dmdHis") . '.' . (QTR==0?'M':'Q') . '.result' . CSV; //parameter file
+$fprf = fopen(ODIR . DATAFOLDER . '/' . $RF, 'w') or die ("Can't open file: " . ODIR . $TSF . '<br>');
 
 //Now we will start the loop of reading in the input filesize
 
@@ -234,14 +237,17 @@ $fprf = fopen(ODIR . DATAFOLDER . '/' . $SF, 'w') or die ("Can't open file: " . 
 
 $tck = array(); //[$pi][$row]investable universe for this time unit, treated as a 'constant' per time unit
 $mkt = array(); //[$pi][$row]market cap
-$rtn = array(); //[$pi][$row]return
+$prt = array(); //[$pi][$row]periodical return
+$tmk = array(); //[$pi] total market cap
+$art = array(); //[$pi] aggregated periodical return
+$ant = array(); //[$pi] aggregated periodical net return
 $max = array(); //[$pi] max cap
 $min = array(); //[$pi] min cap
 $nor = array(); //[$pi] number of rows;
 $trn = array(); //[$pi] turnover
 $tst = array(); //[$pi] transaction cost
-$sll = array(); //[$pi] sell of the period [0] is empty
-$buy = array(); //[$pi] buy of the period [0] is empty
+
+$fns = array(); //[$pi] file names in the periods
 
 $pi = 0;
 
@@ -251,14 +257,16 @@ for($i = 0; $i < SEQ; $i+=GAP){ // per period (monthly or quarterly), after the 
 	$tck[$pi] = array();
 	$mkt[$pi] = array();
 	$rtn[$pi] = array();
+	$tmk[$pi] = 0.0;
 	$max[$pi] = 0;
 	$min[$pi] = 1000000000000.0;
 	$nor[$pi] = 0;
-	$trn[$pi] = 0;
+	$trn[$pi] = 0.0;
 	$tst[$pi] = 0.0;
-	
 
 	$fn = sprintf("%02d%02d", substr($file_list[$i], 4, 2), substr($file_list[$i], 2, 2));
+	//echo "working on $fn<br>";
+	$fns[] = $file_list[$i];
 		
 	$fn = IDIR . DATAFOLDER . '/' . $fn . CSV;
 	
@@ -281,7 +289,8 @@ for($i = 0; $i < SEQ; $i+=GAP){ // per period (monthly or quarterly), after the 
 		
 		$tck[$pi][] = $t;	
         $mkt[$pi][$t] = $csv_line[MKT];
-		$rtn[$pi][$t] = $csv_line[(QTR==0?R1M:R3M)];
+		$tmk[$pi] += $mkt[$pi][$t];
+		$prt[$pi][$t] = $csv_line[(QTR==0?R1M:R3M)];
 		if($max[$pi] < $mkt[$pi][$t])
 			$max[$pi] = $mkt[$pi][$t];
 		if($min[$pi] > $mkt[$pi][$t])
@@ -300,12 +309,11 @@ for($p = 1; $p < $pi; $p++){
 
     //$tck from this period ($p) vs $tck last period ($p - 1)	
 	
-	$sll[$p] = 0.0;
-	$buy[$p] = 0.0;
-	$flag = false;
+	$sll = 0.0;
+	$buy = 0.0;
 	
 	$prev = $tck[$p - 1];
-	$curr = $tck[p];
+	$curr = $tck[$p];
 	sort($prev);
 	sort($curr);
 	
@@ -314,49 +322,124 @@ for($p = 1; $p < $pi; $p++){
 	
 	$tot = 0.0;
 	
-	foreach($mkt[$p - 1] as $m) //? either last period or this period, from David's last month
+	foreach($mkt[$p - 1] as $t => $m) //? either last period or this period, from David's last month
 		$tot += $m;
 	
 	foreach($sold as $s){
-		$sz = $mkt[$p - 1][$s];
+		$m = $mkt[$p - 1][$s];
 
-		$sll[$p - 1] += $sz;
-		$tst[$p] += $sz*cst($sz)/$tot;
+		$sll += $m;
+		$tst[$p] += $m*cst($m)/$tot;
 	}
 	
-	$sll[$$p - 1] /= $tot;
+	$sll /= $tot;
 	
 	foreach($bott as $s){
-		$sz = $mkt[$p][$s];
-		$buy[$p - 1] += $sz;
-		$tst[$p] += $sz*cst($sz)/$tot;
+		$m = $mkt[$p][$s];
+		$buy += $m;
+		$tst[$p] += $m*cst($m)/$tot;
 	}
-	$buy[$p - 1] /= $tot;
+	$buy /= $tot;
 				
-	$trn[$p] = min($buy[$p - 1], $sll[$p - 1]);	
+	$trn[$p] = min($buy, $sll);	
 }
 
-//Ready for the result, now, need to prepare for the summary
+for($p = 0; $p < $pi; $p++){
+	$art[$p] = rtn($p);
+	$ant[$p] = $art[$p] - $tst[$p];
+}
+
+
+//We got everything for result, now, need to prepare for the summaryRun Date	16/08/22
+
+/*format	
+Summary results for input/data62B	= IDIR . '.' . DATAFOLDER	
+Run Date	16/08/22				= date()
+Period	21							= $pi
+Start	2011/07						= $fns[0]
+End	2016/07							= $fns[$pi - 1]
+Avg#Sec	3692						= avg($nor)
+									= 
+Average Returns	Gross	Net			= 
+Monthly	4.17%	4.17%				= avg($art) and avg($ant)
+Annual	16.68%	16.67%				= $avg($art) * 12/(1 or 4), $avg($ant) * (12/1 or 4)
+Median	3.88%	3.88%				= mdn($art), mdn($ant)
+Sample Std Dev						=
+Monthly	6.38%						= std($art)
+Annual	12.76%						= std($art) * sqrt(12/1 or 4)
+Total Cpd Rtn	126.85%	126.77%		= $agr, $anr
+Ann Cpd Rtn	59.69%	59.66%			= pow(1 + $agr, 12/$pi), pow(1 + $anr, 12/$pi)
+									=
+Sharpe Ratio	0.62854				= (avg($art) - $TB * (1 or 3))/std($art)
+Ann Turnover	1.36%				= avg($trn)	* (12 or 4)
+Txn cost(%AUM)	0.01%				= avg($sts) * (12 or 4)
+									=
+T-Bill	0.16%						= $TB
+*/
+
+$agr = 1.0; //aveage gross return
+$anr = 1.0; //average net return
 
 for($p = 0; $p < $pi; $p++){
+	$agr *= 1.0 + $art[$p];
+	$anr *= 1.0 + $ant[$p];
+}
+$agr -= 1.0;
+$anr -= 1.0;	
 
-	$prt = ${'t' . $i . 'p'}[$mi];
-	if(FULLPRINT)
-		fprintf(${'frp'.$i}, "%5s, %f, %f, %f, %f, %f, %f, %f, %f, %d, %f, %f, %f, %f\n", $mn, $TT[$mi]/1000.0, psz($mi, $prt)/1000.0, wsz($mi, $prt), wvl($mi, $prt), nsz($mi, $prt), xsz($mi, $prt), nvl($mi, $prt), rtn($mi, $prt), count($prt), ${'t'.$i.'tto'}[$mi], ${'t'.$i.'txn'}[$mi], ${'t'.$i.'s'}[$mi], ${'t'.$i.'v'}[$mi]);
-	${'t' . $i . 'pap'} += count($prt)/$PS;
-	${'t' . $i . 'pcr'} *= (1.0 + rtn($mi, $prt));			
-	${'t' . $i . 'prt'}[$mi] = rtn($mi, $prt);
-	${'t' . $i . 'pnr'}[$mi] = rtn($mi, $prt) - ${'t'.$i.'txn'}[$mi];
-	${'t' . $i . 'pcn'} *= (1.0 + ${'t' . $i . 'pnr'}[$mi]);
-}			
+//var_dump($agr);
+//var_dump($anr);
 
+//time to print out both result and summary
 
-//var_dump($tck);
-//var_dump($mkt);
-//var_dump($rtn);
-//var_dump($max);
-//var_dump($min);
+//result first to $fprf
 
+//first line, the $SUMA array
+//$SUMA = array('Date (MM/YY)', 'MKTCAP ($B)', 'Max MKTCAP ($M)', 'Min MKTCAP ($M)', 'Return', 'No. of Secs', 'Turnover', 'Est Txn cost (%AUM)');
 
+for($i = 0; $i < 7; $i++)
+	fprintf($fprf, "%s,", $SUMA[$i]);
+fprintf($fprf, "%s\n", $SUMA[$i]);
+	//fprintf($fprf, ($i < 6)?"%s,":"%s\n", $SUMA[$i]);
 
+for($p = 0; $p < $pi; $p++){//only 8 columns
+	fprintf($fprf, "%s,", substr($fns[$p], 4, 2) . '/' . substr($fns[$p], 2, 2)); // MM/YY
+	fprintf($fprf, "%f,", $tmk[$p]/1000000000.0); // 
+	fprintf($fprf, "%f,", $max[$p]/1000000.0); // 
+	fprintf($fprf, "%f,", $min[$p]/1000000.0); // 
+	fprintf($fprf, "%f,", $art[$p]); // 
+	fprintf($fprf, "%d,", $nor[$p]); // 
+	fprintf($fprf, "%f,", $trn[$p]); // 
+	fprintf($fprf, "%f\n", $tst[$p]); // 
+}
+	
+fclose($fprf);
+
+//first line to $fpsf 
+//*format	
+fprintf($fpsf, "Summary for,%s\n", IDIR . DATAFOLDER);
+fprintf($fpsf, "Run Date,%s\n",	date("Y-m-d H:i:s"));
+fprintf($fpsf, "Period,%d\n", $pi);
+fprintf($fpsf, "Start,%s\n", substr($fns[0], 4, 2) . '-' . substr($fns[0], 2, 2));
+fprintf($fpsf, "End,%s\n", substr($fns[$pi - 1], 4, 2) . '-' . substr($fns[$pi - 1], 2, 2));
+fprintf($fpsf, "Avg#Sec,%d\n", avg($nor));
+fprintf($fpsf, "\n");
+fprintf($fpsf, "Average Returns,Gross,Net\n");
+fprintf($fpsf, "Monthly, %f%%, %f%%\n", avg($art)*100.0, avg($ant)*100.0);
+fprintf($fpsf, "Annual, %f%%, %f%%\n", avg($art) *100.0* (QTR==0?12:4), avg($ant) *100.0 * (QTR==0?12:4));
+fprintf($fpsf, "Median, %f%%, %f%%\n", mdn($art)*100.0, mdn($ant)*100.0);
+fprintf($fpsf, "Sample Std Dev\n");
+fprintf($fpsf, "Monthly, %f%%\n", std($art)*100.0);
+fprintf($fpsf, "Annual, %f%%\n", std($art) * sqrt(QTR==0?12:4)*100.0);
+fprintf($fpsf, "Total Cpd Rtn, %f%%, %f%%\n", $agr*100.0, $anr*100.0);
+fprintf($fpsf, "Ann Cpd Rtn, %f%%, %f%%\n", (pow(1.0 + $agr, 12.0/$pi)-1.0)*100.0, (pow(1.0 + $anr, 12.0/$pi)-1.0)*100.0);
+fprintf($fpsf, "\n");
+fprintf($fpsf, "Sharpe Ratio, %f\n", (avg($art) - $TB * (QTR==0?1.0:3.0))/std($art));
+fprintf($fpsf, "Ann Turnover, %f%%\n", avg($trn)*100.0	* (QTR==0?12:4));
+fprintf($fpsf, "Txn cost(%%AUM), %f%%\n", avg($tst) * (QTR==0?12:4)*100.0);
+fprintf($fpsf, "\n");
+fprintf($fpsf, "T-Bill, %f\n", $TB);
+
+fclose($fpsf);
+echo "Done at" . date("Y-m-d H:i:s");
 ?>
