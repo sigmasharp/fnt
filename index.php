@@ -162,15 +162,16 @@ function intersection($s1, $s2){ // si intersects with s2, in both s1 and s2.
 	return(array_intersect($s1, $s2));
 }
 
-function rtn($m){
+function rtn($p){
 	global $mkt, $rtn;
 	
 	$ret = 0.0;
-	$prtsz = psz($m, $s1);
-	foreach($s1 as $s){
-		$sz = $size_set[$m][$s];
-		$rt = $retn_set[$m][$s];
-		$ret += $rt*$sz/$prtsz;
+	$tot = 0.0;
+	foreach($mkt[$p] as $s => $m)
+		$tot += $m;
+	
+	foreach($rtn[$p] as $s => $r){
+		$ret += $r*$mkt[$p][$s]/$tot;
 	}
 	return($ret);	
 }
@@ -239,10 +240,12 @@ $min = array(); //[$pi] min cap
 $nor = array(); //[$pi] number of rows;
 $trn = array(); //[$pi] turnover
 $tst = array(); //[$pi] transaction cost
+$sll = array(); //[$pi] sell of the period [0] is empty
+$buy = array(); //[$pi] buy of the period [0] is empty
 
 $pi = 0;
 
-for($i = 0; $i < SEQ; $i+=GAP){ // per period (monthly or quarterly)
+for($i = 0; $i < SEQ; $i+=GAP){ // per period (monthly or quarterly), after the loop $pi = period count
 	//var_dump($file_list[$i]);
 
 	$tck[$pi] = array();
@@ -277,12 +280,12 @@ for($i = 0; $i < SEQ; $i+=GAP){ // per period (monthly or quarterly)
 		}
 		
 		$tck[$pi][] = $t;	
-        $mkt[$pi][] = $csv_line[MKT];
-		$rtn[$pi][] = $csv_line[(QTR==0?R1M:R3M)];
-		if($max[$pi] < $mkt[$pi][$nor[$pi]])
-			$max[$pi] = $mkt[$pi][$nor[$pi]];
-		if($min[$pi] > $mkt[$pi][$nor[$pi]])
-			$min[$pi] = $mkt[$pi][$nor[$pi]];		
+        $mkt[$pi][$t] = $csv_line[MKT];
+		$rtn[$pi][$t] = $csv_line[(QTR==0?R1M:R3M)];
+		if($max[$pi] < $mkt[$pi][$t])
+			$max[$pi] = $mkt[$pi][$t];
+		if($min[$pi] > $mkt[$pi][$t])
+			$min[$pi] = $mkt[$pi][$t];		
 		$nor[$pi] ++;		
 	}
 	
@@ -291,11 +294,68 @@ for($i = 0; $i < SEQ; $i+=GAP){ // per period (monthly or quarterly)
 	$pi++;
 }
 
+//next we need to take care of turn over and transaction fee, starting 2nd period
+
+for($p = 1; $p < $pi; $p++){
+
+    //$tck from this period ($p) vs $tck last period ($p - 1)	
+	
+	$sll[$p] = 0.0;
+	$buy[$p] = 0.0;
+	$flag = false;
+	
+	$prev = $tck[$p - 1];
+	$curr = $tck[p];
+	sort($prev);
+	sort($curr);
+	
+	$sold = difference($prev, $curr);
+	$bott = difference($curr, $prev);
+	
+	$tot = 0.0;
+	
+	foreach($mkt[$p - 1] as $m) //? either last period or this period, from David's last month
+		$tot += $m;
+	
+	foreach($sold as $s){
+		$sz = $mkt[$p - 1][$s];
+
+		$sll[$p - 1] += $sz;
+		$tst[$p] += $sz*cst($sz)/$tot;
+	}
+	
+	$sll[$$p - 1] /= $tot;
+	
+	foreach($bott as $s){
+		$sz = $mkt[$p][$s];
+		$buy[$p - 1] += $sz;
+		$tst[$p] += $sz*cst($sz)/$tot;
+	}
+	$buy[$p - 1] /= $tot;
+				
+	$trn[$p] = min($buy[$p - 1], $sll[$p - 1]);	
+}
+
+//Ready for the result, now, need to prepare for the summary
+
+for($p = 0; $p < $pi; $p++){
+
+	$prt = ${'t' . $i . 'p'}[$mi];
+	if(FULLPRINT)
+		fprintf(${'frp'.$i}, "%5s, %f, %f, %f, %f, %f, %f, %f, %f, %d, %f, %f, %f, %f\n", $mn, $TT[$mi]/1000.0, psz($mi, $prt)/1000.0, wsz($mi, $prt), wvl($mi, $prt), nsz($mi, $prt), xsz($mi, $prt), nvl($mi, $prt), rtn($mi, $prt), count($prt), ${'t'.$i.'tto'}[$mi], ${'t'.$i.'txn'}[$mi], ${'t'.$i.'s'}[$mi], ${'t'.$i.'v'}[$mi]);
+	${'t' . $i . 'pap'} += count($prt)/$PS;
+	${'t' . $i . 'pcr'} *= (1.0 + rtn($mi, $prt));			
+	${'t' . $i . 'prt'}[$mi] = rtn($mi, $prt);
+	${'t' . $i . 'pnr'}[$mi] = rtn($mi, $prt) - ${'t'.$i.'txn'}[$mi];
+	${'t' . $i . 'pcn'} *= (1.0 + ${'t' . $i . 'pnr'}[$mi]);
+}			
+
+
 //var_dump($tck);
-var_dump($mkt);
+//var_dump($mkt);
 //var_dump($rtn);
-var_dump($max);
-var_dump($min);
+//var_dump($max);
+//var_dump($min);
 
 
 
